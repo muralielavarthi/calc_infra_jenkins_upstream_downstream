@@ -1,0 +1,96 @@
+pipeline {
+    agent { label 'backend_ci' }
+
+    parameters {
+        choice(name: 'TF_ACTION', choices: ['apply', 'destroy'], description: 'Terraform action')
+    }
+
+    environment {
+        PROJECT_NAME  = 'calc'
+        COMPONENT_NAME = 'backend'
+        ACCOUNT_ID    = '890742589086'
+    }
+
+    options {
+        ansiColor('xterm')
+    }
+
+    stages {
+        stage('terraform init') {
+            steps {
+                script {
+                    withAWS(credentials: 'aws-creds', region: 'us-east-1') {
+                        sh "cd 02-ec2 && terraform init -reconfigure"
+                    }
+                }
+            }
+        }
+
+        stage('terraform plan') {
+            when {
+                expression { params.TF_ACTION == 'apply' }
+            }
+            steps {
+                script {
+                    withAWS(credentials: 'aws-creds', region: 'us-east-1') {
+                        sh "cd 02-ec2 && terraform plan"
+                    }
+                }
+            }
+        }
+
+        stage('terraform apply') {
+            when {
+                expression { params.TF_ACTION == 'apply' }
+            }
+            input {
+                message "Do you want to apply the infra changes?"
+                ok "Apply"
+            }
+            steps {
+                script {
+                    withAWS(credentials: 'aws-creds', region: 'us-east-1') {
+                        sh "cd 02-ec2 && terraform apply -auto-approve"
+                    }
+                }
+            }
+        }
+
+        stage('terraform plan destroy') {
+            when {
+                expression { params.TF_ACTION == 'destroy' }
+            }
+            steps {
+                script {
+                    withAWS(credentials: 'aws-creds', region: 'us-east-1') {
+                        sh "cd 02-ec2 && terraform plan -destroy"
+                    }
+                }
+            }
+        }
+
+        stage('terraform destroy') {
+            when {
+                expression { params.TF_ACTION == 'destroy' }
+            }
+            input {
+                message "Do you want to destroy the infra?"
+                ok "Destroy"
+            }
+            steps {
+                script {
+                    withAWS(credentials: 'aws-creds', region: 'us-east-1') {
+                        sh "cd 02-ec2 && terraform destroy -auto-approve"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo "Cleaning up workspace..."
+            deleteDir()
+        }
+    }
+}
